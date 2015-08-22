@@ -51,9 +51,25 @@ function CassandraFactory:new(properties, plugins)
 end
 
 function CassandraFactory:load_daos(plugin_daos)
+  local dao
   for name, plugin_dao in pairs(plugin_daos) do
-    self.daos[name] = plugin_dao(self._properties)
-    self.daos[name]._factory = self
+    dao = plugin_dao(self._properties)
+    dao._factory = self
+    self.daos[name] = dao
+    if dao._schema then
+      -- Check for any foreign relations to trigger cascade deletes
+      for field_name, field in pairs(dao._schema.fields) do
+        if field.foreign ~= nil then
+          local foreign_dao, foreign_column = unpack(stringy.split(field.foreign, ":"))
+          assert(foreign_dao ~= nil, "Foreign property "..field_name.." of schema "..name.." must contain 'foreign_dao:foreign_column")
+          assert(foreign_column ~= nil, "Foreign property "..field_name.." of schema "..name.." must contain 'foreign_dao:foreign_column")
+          print("DAO "..name.." has property "..field_name.." with foreign "..foreign_dao..":"..foreign_column)
+
+          -- Add delete hook to the parent DAO
+          dao:add_delete_hook(foreign_dao, foreign_column)
+        end
+      end
+    end
   end
 end
 

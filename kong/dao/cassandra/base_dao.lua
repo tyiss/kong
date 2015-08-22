@@ -44,6 +44,7 @@ function BaseDao:new(properties)
 
   self._properties = properties
   self._statements_cache = {}
+  self._cascade_delete_hooks = {}
 end
 
 -- Marshall an entity. Does nothing by default,
@@ -258,9 +259,7 @@ function BaseDao:execute(query, columns, args_to_bind, options)
   end
 
   -- Execute statement
-  local results, err = self:_execute(query, args, options)
-
-  return results, err
+  return self:_execute(query, args, options)
 end
 
 -- Check all fields marked with a `unique` in the schema do not already exist.
@@ -551,6 +550,17 @@ function BaseDao:find(page_size, paging_state)
   return self:find_by_keys(nil, page_size, paging_state)
 end
 
+function BaseDao:add_delete_hook(foreign_dao_name, foreign_column)
+  local delete_hook = function(deleted_primary_key)
+    local foreign_dao = self._factory[foreign_dao]
+    -- Iterate over all rows with the foreign key and delete them
+    local select_q, columns = query_builder.select(foreign_dao._table, deleted_primary_key)
+    print(select_q)
+  end
+
+  table.insert(self._cascade_delete_hooks, delete_hook)
+end
+
 -- Delete the row at a given PRIMARY KEY.
 -- @param  `where_t` A table containing the PRIMARY KEY (columns/values) of the row to delete
 -- @return `success` True if deleted, false if otherwise or not found
@@ -569,7 +579,15 @@ function BaseDao:delete(where_t)
 
   local t_primary_key = extract_primary_key(where_t, self._primary_key, self._clustering_key)
   local delete_q, where_columns = query_builder.delete(self._table, t_primary_key)
-  return self:execute(delete_q, where_columns, where_t)
+  local results, err = self:execute(delete_q, where_columns, where_t)
+  if err then
+    return err
+  end
+
+  -- Delete successful, trigger cascade deletes if any
+  for _, hook in ipairs(self._cascade_delete_hooks) do
+    local res, err = hook(t_primary_key)
+  end
 end
 
 -- Truncate the table of this DAO

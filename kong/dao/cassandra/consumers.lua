@@ -38,4 +38,4 @@ function Consumers:delete(where_t)
   return ok
 end
 
-return { consumers = Consumers }
+return {consumers = Consumers}
